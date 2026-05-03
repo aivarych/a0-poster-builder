@@ -1,0 +1,21 @@
+{
+  "name": "a0-poster-builder",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "A0 scientific poster builder — visual editor + JSON-driven runtime + print-ready HTML export",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^5.4.0"
+  },
+  "dependencies": {
+    "qrcode-svg": "^1.1.0",
+    "vega": "^5.33.1",
+    "vega-embed": "^6.29.0",
+    "vega-lite": "^5.23.0"
+  }
+}

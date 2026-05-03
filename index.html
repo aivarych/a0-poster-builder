@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>A0 Poster Builder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/src/styles/builder.css">
+</head>
+<body>
+
+<div id="app">
+  <div class="toolbar">
+    <div class="toolbar-brand">
+      <span class="brand-mark">A0</span>
+      <span>POSTER&nbsp;BUILDER</span>
+    </div>
+
+    <div class="project-switcher">
+      <button class="project-switcher-btn" id="project-switcher-btn">
+        <span class="project-icon">📁</span>
+        <span class="project-name" id="current-project-name" data-i18n="toolbar.untitled">Untitled</span>
+        <span class="caret">▾</span>
+      </button>
+      <div class="project-menu" id="project-menu"></div>
+      <div class="save-indicator" id="save-indicator">
+        <span class="save-dot"></span>
+        <span class="save-text">—</span>
+      </div>
+    </div>
+
+    <button class="btn btn-ghost" id="btn-import" data-i18n="toolbar.import_json">↑ Import JSON</button>
+    <button class="btn btn-ghost" id="btn-export-json" data-i18n="toolbar.export_json">↓ Export JSON</button>
+    <button class="btn btn-ghost" id="btn-reset" data-i18n="toolbar.reset">↺ Reset to demo</button>
+
+    <div class="toolbar-spacer"></div>
+
+    <div class="theme-control" id="theme-control">
+      <span class="theme-label" data-i18n="toolbar.theme_label">Theme:</span>
+      <select id="theme-select"></select>
+      <button id="theme-edit-btn" class="theme-edit" data-i18n-title="theme.edit_colors" title="Edit colors" hidden>🎨</button>
+      <div class="theme-popover" id="theme-popover" hidden></div>
+    </div>
+
+    <div class="locale-toggle" id="locale-toggle">
+      <button data-locale="en">EN</button>
+      <button data-locale="ru">RU</button>
+    </div>
+
+    <button class="btn btn-primary" id="btn-export-html" data-i18n="toolbar.export_html">Export print-ready HTML →</button>
+    <input type="file" id="import-file" hidden accept=".json,application/json">
+  </div>
+
+  <div class="workspace">
+    <aside class="panel" id="panel-sidebar">
+      <div class="panel-header"><span data-i18n="sidebar.structure">Structure</span></div>
+      <div class="section-list" id="section-list"></div>
+      <div class="add-section-wrap">
+        <button class="btn" style="width:100%;justify-content:center;" id="btn-add-section" data-i18n="sidebar.add_section">+ Add section</button>
+        <div class="add-section-menu" id="add-section-menu"></div>
+      </div>
+    </aside>
+
+    <main class="panel" id="panel-editor">
+      <div class="panel-header"><span data-i18n="sidebar.editor">Editor</span></div>
+      <div class="editor-body" id="editor-body"></div>
+    </main>
+
+    <section class="preview-wrap" id="preview-wrap">
+      <div class="preview-overlay">
+        <span id="preview-size-label" data-i18n="preview.size_label">A0 · 841 × 1189 mm</span>
+        <div class="zoom-controls">
+          <button id="zoom-out" data-i18n-title="preview.zoom_out" title="Zoom out">−</button>
+          <button id="zoom-fit" data-i18n-title="preview.zoom_fit" title="Fit">⤢</button>
+          <button id="zoom-in" data-i18n-title="preview.zoom_in" title="Zoom in">+</button>
+        </div>
+        <span id="zoom-display">32%</span>
+      </div>
+      <div class="preview-frame" id="preview-frame">
+        <iframe id="preview-iframe" sandbox="allow-scripts"></iframe>
+      </div>
+      <div class="overflow-banner" id="overflow-banner"></div>
+    </section>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>
