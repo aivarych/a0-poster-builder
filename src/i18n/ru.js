@@ -200,12 +200,11 @@ export default {
   'theme.edit_colors':         'Изменить цвета',
   'theme.popover_title':       'Произвольная палитра',
   'theme.reset_palette':       'Сбросить палитру',
-  'theme.var.navy':            'Основной',
-  'theme.var.navy_dark':       'Основной (тёмный)',
-  'theme.var.navy_light':      'Основной (светлый фон)',
-  'theme.var.navy_lighter':    'Основной (бледный)',
-  'theme.var.accent_red':      'Акцент',
-  'theme.var.accent_soft':     'Акцент (светлый фон)',
+  'theme.var.navy':            'Шапка и тёмные блоки',
+  'theme.var.navy_dark':       'Заголовки',
+  'theme.var.navy_light':      'Фон карточек',
+  'theme.var.accent_red':      'Акцент (цифры, маркеры)',
+  'theme.var.accent_soft':     'Фон акцентных боксов',
 
   // ── editor field hints ─────────────────────────────────────────
   'editor.hint.subtitle': 'Курсивная строка под авторами (необязательно)',

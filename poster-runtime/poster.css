@@ -1,6 +1,6 @@
 @page { size: 841mm 1189mm; margin: 0; }
 :root {
-  --navy:#3c5a7a; --navy-dark:#2e4661; --navy-light:#e4ecf4; --navy-lighter:#f2f6fb;
+  --navy:#3c5a7a; --navy-dark:#2e4661; --navy-light:#e4ecf4;
   --accent-red:#c0392b; --accent-soft:#f4d9d5; --text:#1e293b; --text-muted:#475569;
   --border:#c5d1e0; --white:#ffffff;
 }

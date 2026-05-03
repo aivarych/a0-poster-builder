@@ -206,12 +206,11 @@ export default {
   'theme.edit_colors':         'Edit colors',
   'theme.popover_title':       'Custom palette',
   'theme.reset_palette':       'Reset palette',
-  'theme.var.navy':            'Primary',
-  'theme.var.navy_dark':       'Primary dark',
-  'theme.var.navy_light':      'Primary light (background)',
-  'theme.var.navy_lighter':    'Primary lighter',
-  'theme.var.accent_red':      'Accent',
-  'theme.var.accent_soft':     'Accent soft (background)',
+  'theme.var.navy':            'Header & dark blocks',
+  'theme.var.navy_dark':       'Section titles',
+  'theme.var.navy_light':      'Card background',
+  'theme.var.accent_red':      'Accent (numbers, bullets)',
+  'theme.var.accent_soft':     'Accent box background',
 
   // ── editor field hints (NB: viewbox stays EN in both locales) ──
   'editor.hint.subtitle': 'Optional italic line below authors',
