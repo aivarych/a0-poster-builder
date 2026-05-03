@@ -27,6 +27,7 @@ export default {
   // ── sidebar ─────────────────────────────────────────────────────
   'sidebar.structure':       'Структура',
   'sidebar.editor':          'Редактор',
+  'sidebar.preview':         'Превью',
   'sidebar.add_section':     '+ Добавить раздел',
   'sidebar.untitled_poster': 'Постер без названия',
   'sidebar.footer_label':    'Подвал · Раскрытие · Контакты',

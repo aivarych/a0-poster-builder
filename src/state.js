@@ -21,6 +21,9 @@ export const state = {
   /** Preview zoom factor (1.0 = 100%) */
   zoom: 0.32,
 
+  /** True after user zoomed in/out manually — disables auto-fit on layout changes until they click "Fit". */
+  userZoomed: false,
+
   /** All saved projects keyed by id: { [id]: { id, name, updatedAt, config, userNamed } } */
   projects: {},
 

@@ -16,6 +16,9 @@
   --info:         #58a6ff;
   --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
   --sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  --sidebar-w: 240px;
+  --editor-w: 480px;
 }
 
 * { box-sizing: border-box; }
@@ -31,6 +34,7 @@ html, body {
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
 }
+body:focus { outline: none; }
 
 button, input, textarea, select {
   font-family: inherit;
@@ -40,7 +44,7 @@ button, input, textarea, select {
 
 #app {
   display: grid;
-  grid-template-rows: 48px 1fr;
+  grid-template-rows: auto auto 1fr;
   height: 100vh;
 }
 
@@ -208,8 +212,11 @@ button, input, textarea, select {
 .toolbar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
-  padding: 0 14px;
+  row-gap: 6px;
+  min-height: 48px;
+  padding: 6px 14px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
 }
@@ -423,17 +430,97 @@ button, input, textarea, select {
 /* ============ WORKSPACE ============ */
 .workspace {
   display: grid;
-  grid-template-columns: 240px 480px 1fr;
+  grid-template-columns: var(--sidebar-w) 5px var(--editor-w) 5px minmax(0, 1fr);
   min-height: 0;
+  position: relative;
 }
 .panel {
   background: var(--surface);
-  border-right: 1px solid var(--border);
   overflow-y: auto;
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 .panel:last-child { border-right: none; }
+
+/* Column resizers between panels */
+.resizer {
+  background: var(--border);
+  cursor: col-resize;
+  position: relative;
+  z-index: 5;
+  transition: background 0.12s;
+  user-select: none;
+  touch-action: none;
+}
+.resizer::before {
+  /* Wider invisible hit area for easier grabbing */
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  right: -3px;
+}
+.resizer:hover,
+.resizer:focus-visible,
+.resizer.dragging {
+  background: var(--accent);
+  outline: none;
+}
+body.is-resizing {
+  cursor: col-resize !important;
+  user-select: none;
+}
+body.is-resizing iframe { pointer-events: none; }
+
+/* Workspace tabs (mobile / narrow only) */
+.workspace-tabs {
+  display: none;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.workspace-tabs button {
+  flex: 1 1 0;
+  background: transparent;
+  border: none;
+  color: var(--text-2);
+  padding: 10px 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 0.1s, border-color 0.1s;
+}
+.workspace-tabs button:hover { color: var(--text); }
+.workspace-tabs button.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+@media (max-width: 900px) {
+  .workspace-tabs { display: flex; }
+  .workspace {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+  .resizer { display: none; }
+  .workspace > .panel,
+  .workspace > .preview-wrap { display: none; }
+  .workspace > .panel.is-active { display: flex; }
+  .workspace > .preview-wrap.is-active { display: flex; }
+}
+
+@media (max-width: 600px) {
+  .toolbar-spacer { display: none; }
+  .toolbar-brand { margin-right: 8px; }
+  .project-switcher { margin-right: 6px; padding-left: 8px; }
+  .theme-control { margin-right: 4px; padding-right: 6px; }
+  .project-switcher-btn { min-width: 120px; max-width: 200px; }
+}
 .panel-header {
   padding: 12px 14px 8px;
   font-family: var(--mono);
@@ -1067,12 +1154,20 @@ button, input, textarea, select {
   background-image:
     radial-gradient(circle at 1px 1px, rgba(255,255,255,0.03) 1px, transparent 0);
   background-size: 24px 24px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  min-height: 0;
+}
+.preview-scroll {
+  flex: 1;
   overflow: auto;
   display: flex;
   align-items: flex-start;
   justify-content: center;
   padding: 30px;
-  position: relative;
+  min-height: 0;
 }
 .preview-frame {
   /* A0 = 841mm × 1189mm. Real size at 96dpi ≈ 3179×4494 px.
@@ -1228,4 +1323,4 @@ button, input, textarea, select {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 5px; border: 2px solid var(--surface); }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
-.preview-wrap::-webkit-scrollbar-thumb { border-color: #2a2f37; }
+.preview-scroll::-webkit-scrollbar-thumb { border-color: #2a2f37; }

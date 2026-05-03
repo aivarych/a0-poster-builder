@@ -33,6 +33,7 @@ export default {
   // ── sidebar ─────────────────────────────────────────────────────
   'sidebar.structure':       'Structure',
   'sidebar.editor':          'Editor',
+  'sidebar.preview':         'Preview',
   'sidebar.add_section':     '+ Add section',
   'sidebar.untitled_poster': 'Untitled poster',
   'sidebar.footer_label':    'Footer · Disclosures · Contact',

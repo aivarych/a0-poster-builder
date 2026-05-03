@@ -39,6 +39,7 @@ import {
   THEMES, DEFAULT_THEME, THEME_VAR_LABEL_KEYS, listThemeIds
 } from './themes/index.js';
 import { undo, redo } from './history.js';
+import { setupLayout } from './layout.js';
 
 document.addEventListener('DOMContentLoaded', () => {
   // ---- Locale: detect → apply BEFORE first render so all strings come out right
@@ -101,12 +102,29 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // ---- Zoom ----
-  document.getElementById('zoom-in').addEventListener('click', () => applyZoom(state.zoom * 1.15));
-  document.getElementById('zoom-out').addEventListener('click', () => applyZoom(state.zoom / 1.15));
-  document.getElementById('zoom-fit').addEventListener('click', fitZoom);
+  document.getElementById('zoom-in').addEventListener('click', () => {
+    state.userZoomed = true;
+    applyZoom(state.zoom * 1.15);
+  });
+  document.getElementById('zoom-out').addEventListener('click', () => {
+    state.userZoomed = true;
+    applyZoom(state.zoom / 1.15);
+  });
+  document.getElementById('zoom-fit').addEventListener('click', () => {
+    state.userZoomed = false;
+    fitZoom();
+  });
 
   // ---- Undo/redo ----
   setupUndoRedoShortcuts();
+
+  // ---- Layout: resizable columns + responsive panel tabs + auto-fit on resize.
+  // Set up before initial render so column widths are applied before fitZoom.
+  setupLayout();
+
+  // Bounce focus off the preview iframe — once Safari hands focus to the
+  // sandboxed iframe, our document-level keydown listener stops seeing Cmd+Z.
+  setupPreviewFocusBounce();
 
   // ---- Initial render ----
   renderSidebar();
@@ -115,29 +133,75 @@ document.addEventListener('DOMContentLoaded', () => {
   setTimeout(fitZoom, 100);
 });
 
+function setupPreviewFocusBounce() {
+  const iframe = document.getElementById('preview-iframe');
+  if (!iframe) return;
+  iframe.setAttribute('tabindex', '-1');
+  iframe.addEventListener('focus', () => {
+    setTimeout(() => {
+      iframe.blur();
+      document.body.focus();
+    }, 0);
+  });
+}
+
 function setupUndoRedoShortcuts() {
-  document.addEventListener('keydown', (e) => {
+  // Safari only delivers Cmd+Z keydown to the page if a focusable element
+  // owns focus — otherwise the shortcut goes to the browser menu (Undo Close
+  // Tab). Make <body> programmatically focusable and grab focus immediately,
+  // so document-level shortcuts work straight after page load.
+  document.body.setAttribute('tabindex', '-1');
+  document.body.focus();
+
+  // Capture phase + window-level listener so we see the event before any
+  // descendant or browser default has a chance to consume it.
+  //
+  // We intercept Cmd+Z even inside text inputs because Safari's native
+  // field-undo doesn't always reliably fire an `input` event — the field
+  // value reverts but state.config and the preview drift out of sync.
+  // Routing every undo through our snapshot history keeps everything
+  // consistent. We restore focus and caret position to the same field after
+  // the editor re-renders.
+  window.addEventListener('keydown', (e) => {
     if (!(e.metaKey || e.ctrlKey)) return;
     const key = e.key.toLowerCase();
     const isUndo = key === 'z' && !e.shiftKey;
     const isRedo = (key === 'z' && e.shiftKey) || key === 'y';
     if (!isUndo && !isRedo) return;
 
-    // Inside text inputs, browser-native undo/redo handles the field;
-    // intercepting would steal it.
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Snapshot focus before re-render so we can restore it on the same field.
     const ae = document.activeElement;
-    if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.tagName === 'SELECT')) {
-      return;
+    let focusPath = null, selStart = null, selEnd = null;
+    if (ae && ae.dataset && ae.dataset.path && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) {
+      focusPath = ae.dataset.path;
+      try { selStart = ae.selectionStart; selEnd = ae.selectionEnd; } catch {}
     }
 
-    e.preventDefault();
     const ok = isUndo ? undo() : redo();
     if (!ok) return;
     clampSelection();
     renderSidebar();
     renderEditor();
     refreshPreview(true);
-  });
+
+    if (focusPath) {
+      const next = document.querySelector(
+        `[data-path="${focusPath.replace(/"/g, '\\"')}"]`
+      );
+      if (next && (next.tagName === 'INPUT' || next.tagName === 'TEXTAREA')) {
+        next.focus();
+        try {
+          const len = next.value.length;
+          const s = selStart != null ? Math.min(selStart, len) : len;
+          const en = selEnd != null ? Math.min(selEnd, len) : len;
+          next.setSelectionRange(s, en);
+        } catch {}
+      }
+    }
+  }, { capture: true });
 }
 
 /** After undo/redo the selected section index might point past the new end. */

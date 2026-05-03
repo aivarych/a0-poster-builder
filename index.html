@@ -52,6 +52,12 @@
     <input type="file" id="import-file" hidden accept=".json,application/json">
   </div>
 
+  <div class="workspace-tabs" id="workspace-tabs">
+    <button data-tab="sidebar" data-i18n="sidebar.structure">Structure</button>
+    <button data-tab="editor" data-i18n="sidebar.editor">Editor</button>
+    <button data-tab="preview" data-i18n="sidebar.preview">Preview</button>
+  </div>
+
   <div class="workspace">
     <aside class="panel" id="panel-sidebar">
       <div class="panel-header"><span data-i18n="sidebar.structure">Structure</span></div>
@@ -62,10 +68,14 @@
       </div>
     </aside>
 
+    <div class="resizer" data-resize="sidebar" role="separator" aria-orientation="vertical" tabindex="0" title="Drag to resize · double-click to reset"></div>
+
     <main class="panel" id="panel-editor">
       <div class="panel-header"><span data-i18n="sidebar.editor">Editor</span></div>
       <div class="editor-body" id="editor-body"></div>
     </main>
+
+    <div class="resizer" data-resize="editor" role="separator" aria-orientation="vertical" tabindex="0" title="Drag to resize · double-click to reset"></div>
 
     <section class="preview-wrap" id="preview-wrap">
       <div class="preview-overlay">
@@ -77,8 +87,10 @@
         </div>
         <span id="zoom-display">32%</span>
       </div>
-      <div class="preview-frame" id="preview-frame">
-        <iframe id="preview-iframe" sandbox="allow-scripts"></iframe>
+      <div class="preview-scroll" id="preview-scroll">
+        <div class="preview-frame" id="preview-frame">
+          <iframe id="preview-iframe" sandbox="allow-scripts"></iframe>
+        </div>
       </div>
       <div class="overflow-banner" id="overflow-banner"></div>
     </section>
