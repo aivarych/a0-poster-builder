@@ -21,127 +21,42 @@ import { state } from './state.js';
 import {
   escapeHtml, escapeAttr,
   getAtPath, setAtPath, pathToString, stringToPath,
-  parseCSV, showToast
+  showToast
 } from './utils.js';
 import { refreshPreview } from './preview.js';
 import { renderSidebar } from './sidebar.js';
 import { t } from './i18n/index.js';
-import { PRESETS, buildPreset } from './chart-presets/index.js';
+import { PRESETS, getPreset, DEFAULT_PRESET_ID, defaultLabelsFor, resolveChartLabels } from './chart-presets/index.js';
+import { makeBuilderChart } from './section-types.js';
 import { generateQR } from './qr.js';
 
-/* ---------- Chart-editor helpers (used by chart_with_aside / charts_row) ---------- */
-
-function getChartTab(pathStr) {
-  return state.chartTabs[pathStr] || 'data';
-}
-function setChartTab(pathStr, tab) {
-  state.chartTabs[pathStr] = tab;
-}
-
-/**
- * Read chart.vegaSpec as an object. Migrates string → object on first read
- * (legacy projects stored vegaSpec as a JSON string). Returns null when
- * the spec is empty or the string fails to parse.
+/* ---------- Chart-editor helpers (used by chart_with_aside / charts_row) ----------
+ *
+ * Schema: chart = { title, caption, mode, type, rows, specOverride, svg }
+ *   mode='builder'  → rows seed a preset (selected by `type`) → live spec
+ *   mode='spec'     → specOverride (raw Vega-Lite JSON text) is parsed & rendered
+ *   mode='svg'      → svg string is dropped into the slot as-is
+ *
+ * Only the field matching the active mode is consulted. The runtime never
+ * falls back across modes.
  */
-function getSpecObject(chart) {
-  if (!chart) return null;
-  const raw = chart.vegaSpec;
-  if (raw == null || raw === '') return null;
-  if (typeof raw === 'object') return raw;
-  if (typeof raw === 'string') {
-    try {
-      const obj = JSON.parse(raw);
-      chart.vegaSpec = obj;
-      return obj;
-    } catch { return null; }
-  }
-  return null;
-}
-
-/** Make sure chart.vegaSpec exists as an object — used before we mutate it. */
-function ensureSpec(chart) {
-  if (!chart.vegaSpec || typeof chart.vegaSpec === 'string') {
-    let obj = null;
-    if (typeof chart.vegaSpec === 'string') {
-      try { obj = JSON.parse(chart.vegaSpec); } catch {}
-    }
-    chart.vegaSpec = obj || {};
-  }
-}
 
 function chartFromPathStr(pathStr) {
   return getAtPath(state.config, stringToPath(pathStr));
 }
 
-/** Parse a cell's text input into number/null/string the way Data table expects. */
-function coerceCellValue(raw) {
+/** Parse a cell input into number/null/string per the column type. */
+function coerceCellValue(raw, colType) {
   const s = String(raw).trim();
   if (s === '') return null;
-  if (/^-?\d*\.?\d+(e[+-]?\d+)?$/i.test(s)) {
-    const n = Number(s);
-    if (!isNaN(n)) return n;
+  if (colType === 'number') {
+    if (/^-?\d*\.?\d+(e[+-]?\d+)?$/i.test(s)) {
+      const n = Number(s);
+      if (!isNaN(n)) return n;
+    }
+    return s; // keep raw string so the user sees their typo, doesn't silently swallow
   }
   return s;
-}
-
-/**
- * Reconcile the spec with the data after a CSV import or column rename.
- *
- * - If encoding still references columns that exist in the data, leave it.
- * - If any field in encoding has gone stale (column dropped/renamed) OR
- *   encoding doesn't exist yet, regenerate it from the data: first two
- *   numeric columns → x/y, first string column → color.
- * - Mark is preserved when the user already set one; only filled in if
- *   missing (line+point for 2+ numerics, bar otherwise).
- *
- * Skips entirely if the spec uses layer/facet/concat/repeat (compound
- * specs are too varied to second-guess).
- */
-function autoFillBareSpec(chart) {
-  const spec = chart && chart.vegaSpec;
-  if (!spec || typeof spec !== 'object') return;
-  if (spec.layer || spec.facet ||
-      spec.concat || spec.hconcat || spec.vconcat || spec.repeat) return;
-  const values = spec.data && spec.data.values;
-  if (!Array.isArray(values) || !values.length) return;
-
-  const cols = new Set();
-  values.forEach(r => Object.keys(r || {}).forEach(k => cols.add(k)));
-
-  let needsEncoding = !spec.encoding;
-  if (spec.encoding) {
-    for (const channel of ['x', 'y', 'color', 'size', 'opacity', 'shape']) {
-      const f = spec.encoding[channel] && spec.encoding[channel].field;
-      if (f && !cols.has(f)) { needsEncoding = true; break; }
-    }
-  }
-
-  if (needsEncoding) {
-    const numericCols = [];
-    const stringCols  = [];
-    cols.forEach(c => {
-      let allNumeric = true;
-      let sawValue = false;
-      for (const r of values) {
-        const v = r[c];
-        if (v == null || v === '') continue;
-        sawValue = true;
-        if (typeof v !== 'number') { allNumeric = false; break; }
-      }
-      if (sawValue && allNumeric) numericCols.push(c);
-      else stringCols.push(c);
-    });
-
-    spec.encoding = {};
-    if (numericCols[0]) spec.encoding.x = { field: numericCols[0], type: 'quantitative' };
-    if (numericCols[1]) spec.encoding.y = { field: numericCols[1], type: 'quantitative' };
-    if (stringCols[0])  spec.encoding.color = { field: stringCols[0], type: 'nominal' };
-    if (!spec.mark) spec.mark = numericCols.length >= 2 ? { type: 'line', point: true } : 'bar';
-    return;
-  }
-
-  // Encoding already valid — just make sure mark exists.
-  if (!spec.mark) spec.mark = 'point';
 }
 
 /* ---------- Field helpers ---------- */
@@ -207,240 +122,143 @@ function widthSelect(path, value, narrowOpt = 'narrow') {
   return selectField(t('editor.field.width'), path, value, opts);
 }
 
-/* ---------- Chart editor (Data / Encoding / Spec / SVG tabs) ---------- */
+/* ---------- Chart editor (single primary path + Advanced disclosure) ---------- */
 
 function renderChartEditor(pathStr, chart) {
-  const tab = getChartTab(pathStr);
-  const tabBtn = (name) => `
-    <button class="chart-tab ${tab === name ? 'active' : ''}"
-            data-action="set-chart-tab"
-            data-chart-path="${escapeAttr(pathStr)}"
-            data-tab="${name}">${escapeHtml(t('editor.tab.' + name))}</button>
-  `;
-  let body = '';
-  if (tab === 'data')          body = renderChartDataTab(chart, pathStr);
-  else if (tab === 'encoding') body = renderChartEncodingTab(chart, pathStr);
-  else if (tab === 'spec')     body = renderChartSpecTab(chart, pathStr);
-  else if (tab === 'svg')      body = renderChartSvgTab(chart, pathStr);
-  return `
-    <div class="chart-editor">
-      <div class="chart-actions">
-        <details class="chart-preset-control">
-          <summary>${escapeHtml(t('editor.chart.insert_preset'))}</summary>
-          <div class="chart-preset-menu">
-            ${PRESETS.map(p => `
-              <button data-action="apply-preset"
-                      data-chart-path="${escapeAttr(pathStr)}"
-                      data-preset-id="${p.id}">${escapeHtml(t(p.labelKey))}</button>
-            `).join('')}
-          </div>
-        </details>
-      </div>
-      <div class="chart-tabs">
-        ${tabBtn('data')}${tabBtn('encoding')}${tabBtn('spec')}${tabBtn('svg')}
-      </div>
-      <div class="chart-tab-body">
-        ${body}
-      </div>
-    </div>
-  `;
+  const mode = chart.mode || 'builder';
+  if (mode === 'svg')   return renderChartSvgMode(pathStr, chart);
+  if (mode === 'spec')  return renderChartSpecMode(pathStr, chart);
+  return renderChartBuilderMode(pathStr, chart);
 }
 
-function renderChartDataTab(chart, pathStr) {
-  const spec = getSpecObject(chart);
-  const data = spec && spec.data;
+function renderChartBuilderMode(pathStr, chart) {
+  const presetId = chart.type || DEFAULT_PRESET_ID;
+  const preset = getPreset(presetId) || getPreset(DEFAULT_PRESET_ID);
+  const rows = Array.isArray(chart.rows) ? chart.rows : [];
 
-  if (data && data.url) {
-    return `<div class="chart-tab-note">${escapeHtml(t('editor.chart.external_data', { url: data.url }))}</div>`;
-  }
+  const typeOpts = PRESETS.map(p =>
+    `<option value="${p.id}" ${p.id === presetId ? 'selected' : ''}>${escapeHtml(t(p.labelKey))}</option>`
+  ).join('');
 
-  const values = (data && Array.isArray(data.values)) ? data.values : [];
+  const desc = preset.descKey ? `<div class="chart-preset-desc">${escapeHtml(t(preset.descKey))}</div>` : '';
 
-  if (!values.length) {
-    return `
-      <div class="chart-tab-empty">${escapeHtml(t('editor.chart.no_data_yet'))}</div>
-      ${renderCsvPasteBlock(pathStr, true)}
-      <div class="chart-data-actions">
-        <button class="add-item-btn" data-action="add-row" data-chart-path="${escapeAttr(pathStr)}">+ ${escapeHtml(t('editor.chart.add_row'))}</button>
-        <button class="add-item-btn" data-action="add-column" data-chart-path="${escapeAttr(pathStr)}">+ ${escapeHtml(t('editor.chart.add_column'))}</button>
-      </div>
-    `;
-  }
+  const labels = resolveChartLabels(chart);
 
-  // Union of keys across rows so a partial row doesn't drop columns.
-  const colSet = new Set();
-  values.forEach(r => { Object.keys(r || {}).forEach(k => colSet.add(k)); });
-  const columns = [...colSet];
-
-  const headers = columns.map(c => `
+  const headers = preset.columns.map(c => `
     <th>
-      <span class="col-name">${escapeHtml(c)}</span>
-      <button class="col-del" data-action="delete-column" data-chart-path="${escapeAttr(pathStr)}" data-col="${escapeAttr(c)}" title="${escapeAttr(t('sidebar.delete'))}">✕</button>
+      <input type="text"
+             class="col-label-input"
+             data-chart-label="1"
+             data-chart-path="${escapeAttr(pathStr)}"
+             data-col-key="${escapeAttr(c.key)}"
+             value="${escapeAttr(labels[c.key] || '')}"
+             title="${escapeAttr(t('editor.chart.label_tooltip'))}">
+      <span class="col-type">${escapeHtml(c.type === 'number' ? '#' : 'a')}</span>
     </th>
   `).join('');
 
-  const body = values.map((row, i) => `
+  const body = rows.length ? rows.map((row, i) => `
     <tr>
-      ${columns.map(c => `
+      ${preset.columns.map(c => `
         <td><input type="text"
                    data-chart-cell="1"
                    data-chart-path="${escapeAttr(pathStr)}"
                    data-row="${i}"
-                   data-col="${escapeAttr(c)}"
-                   value="${escapeAttr(row[c] != null ? String(row[c]) : '')}"></td>
+                   data-col="${escapeAttr(c.key)}"
+                   data-col-type="${escapeAttr(c.type)}"
+                   value="${escapeAttr(row[c.key] != null ? String(row[c.key]) : '')}"></td>
       `).join('')}
       <td class="row-del-cell"><button class="row-del" data-action="delete-row" data-chart-path="${escapeAttr(pathStr)}" data-row="${i}" title="${escapeAttr(t('sidebar.delete'))}">✕</button></td>
     </tr>
-  `).join('');
+  `).join('') : `
+    <tr><td colspan="${preset.columns.length + 1}" class="chart-data-empty">${escapeHtml(t('editor.chart.no_rows'))}</td></tr>
+  `;
 
   return `
-    <div class="chart-data-table">
-      <table>
-        <thead><tr>${headers}<th class="row-del-cell"></th></tr></thead>
-        <tbody>${body}</tbody>
-      </table>
+    <div class="chart-editor">
+      <div class="chart-type-row">
+        <label class="chart-type-label">${escapeHtml(t('editor.chart.type_label'))}</label>
+        <select class="chart-type-select"
+                data-action="change-chart-type"
+                data-chart-path="${escapeAttr(pathStr)}">${typeOpts}</select>
+      </div>
+      ${desc}
+      <div class="chart-data-table">
+        <table>
+          <thead><tr>${headers}<th class="row-del-cell"></th></tr></thead>
+          <tbody>${body}</tbody>
+        </table>
+      </div>
       <div class="chart-data-actions">
-        <button class="add-item-btn" data-action="add-row" data-chart-path="${escapeAttr(pathStr)}">+ ${escapeHtml(t('editor.chart.add_row'))}</button>
-        <button class="add-item-btn" data-action="add-column" data-chart-path="${escapeAttr(pathStr)}">+ ${escapeHtml(t('editor.chart.add_column'))}</button>
+        <button class="add-item-btn"
+                data-action="add-row"
+                data-chart-path="${escapeAttr(pathStr)}">+ ${escapeHtml(t('editor.chart.add_row'))}</button>
       </div>
+      ${renderAdvancedDisclosure(pathStr, chart, 'builder')}
     </div>
-    ${renderCsvPasteBlock(pathStr, false)}
   `;
 }
 
-function renderCsvPasteBlock(pathStr, expanded) {
+function renderChartSpecMode(pathStr, chart) {
+  const txt = typeof chart.specOverride === 'string' ? chart.specOverride : '';
   return `
-    <details class="chart-csv-paste"${expanded ? ' open' : ''}>
-      <summary>${escapeHtml(t('editor.chart.paste_csv'))}</summary>
-      <textarea class="chart-csv-input code-input"
-                data-csv-input="${escapeAttr(pathStr)}"
-                rows="5"
-                placeholder="${escapeAttr(t('editor.chart.csv_placeholder'))}"></textarea>
-      <button class="add-item-btn" data-action="parse-csv" data-chart-path="${escapeAttr(pathStr)}">${escapeHtml(t('editor.chart.parse_csv'))}</button>
-    </details>
-  `;
-}
-
-const MARK_TYPES = ['line', 'bar', 'point', 'area', 'boxplot', 'tick'];
-const ENC_TYPES  = ['quantitative', 'temporal', 'ordinal', 'nominal'];
-const ENC_CHANNELS = ['x', 'y', 'color'];
-
-function renderChartEncodingTab(chart, pathStr) {
-  const spec = getSpecObject(chart);
-  if (!spec) {
-    return `<div class="chart-tab-empty">${escapeHtml(t('editor.chart.encoding_no_spec'))}</div>`;
-  }
-  const data = spec.data;
-  const values = (data && Array.isArray(data.values)) ? data.values : [];
-  if (!values.length && !data?.url) {
-    return `<div class="chart-tab-empty">${escapeHtml(t('editor.chart.encoding_no_data'))}</div>`;
-  }
-  const cols = [];
-  const seen = new Set();
-  values.forEach(r => Object.keys(r || {}).forEach(k => {
-    if (!seen.has(k)) { seen.add(k); cols.push(k); }
-  }));
-
-  return `
-    ${renderMarkSection(spec, pathStr)}
-    ${ENC_CHANNELS.map(ch => renderEncodingChannelSection(ch, spec, pathStr, cols)).join('')}
-  `;
-}
-
-function renderMarkSection(spec, pathStr) {
-  const markObj = typeof spec.mark === 'string' ? { type: spec.mark } : (spec.mark || {});
-  const type = markObj.type || 'point';
-  const point = markObj.point === true;
-
-  const opts = MARK_TYPES.map(m =>
-    `<option value="${m}" ${m === type ? 'selected' : ''}>${escapeHtml(t('editor.chart.mark.' + m))}</option>`
-  ).join('');
-
-  const showPointToggle = (type === 'line' || type === 'area');
-
-  return `
-    <div class="enc-section">
-      <div class="enc-label">${escapeHtml(t('editor.chart.mark_label'))}</div>
-      <div class="enc-row">
-        <select data-enc-mark-type data-chart-path="${escapeAttr(pathStr)}">${opts}</select>
-        ${showPointToggle ? `
-          <label class="enc-check">
-            <input type="checkbox" data-enc-mark-point data-chart-path="${escapeAttr(pathStr)}" ${point ? 'checked' : ''}>
-            ${escapeHtml(t('editor.chart.mark_point'))}
-          </label>
-        ` : ''}
+    <div class="chart-editor">
+      <div class="chart-mode-banner">
+        <span class="banner-text">${escapeHtml(t('editor.chart.spec_banner'))}</span>
+        <button class="banner-btn"
+                data-action="exit-chart-mode"
+                data-chart-path="${escapeAttr(pathStr)}">${escapeHtml(t('editor.chart.back_to_builder'))}</button>
+      </div>
+      <div class="field">
+        <label class="field-label">${escapeHtml(t('editor.field.vega_spec'))}</label>
+        <textarea class="chart-spec-input code-input"
+                  data-spec-textarea="${escapeAttr(pathStr)}"
+                  rows="16"
+                  spellcheck="false">${escapeHtml(txt)}</textarea>
       </div>
     </div>
   `;
 }
 
-function renderEncodingChannelSection(channel, spec, pathStr, cols) {
-  const enc = (spec.encoding && spec.encoding[channel]) || {};
-  const field = enc.field || '';
-  const type  = enc.type  || '';
-  const title = enc.title != null ? enc.title : '';
-
-  const fieldOpts = `<option value="">—</option>` + cols.map(c =>
-    `<option value="${escapeAttr(c)}" ${c === field ? 'selected' : ''}>${escapeHtml(c)}</option>`
-  ).join('');
-
-  const typeOpts = `<option value="">—</option>` + ENC_TYPES.map(tp =>
-    `<option value="${tp}" ${tp === type ? 'selected' : ''}>${escapeHtml(t('editor.chart.type.' + tp))}</option>`
-  ).join('');
-
-  return `
-    <div class="enc-section">
-      <div class="enc-label">${escapeHtml(t('editor.chart.channel.' + channel))}</div>
-      <div class="enc-row">
-        <select data-enc-field data-channel="${channel}" data-chart-path="${escapeAttr(pathStr)}">${fieldOpts}</select>
-        <select data-enc-type data-channel="${channel}" data-chart-path="${escapeAttr(pathStr)}">${typeOpts}</select>
-      </div>
-      <input type="text"
-             class="enc-title-input"
-             data-enc-title data-channel="${channel}" data-chart-path="${escapeAttr(pathStr)}"
-             value="${escapeAttr(title)}"
-             placeholder="${escapeAttr(t('editor.chart.axis_title_placeholder'))}">
-    </div>
-  `;
-}
-
-function detectFieldType(values, field) {
-  for (const r of values) {
-    const v = r[field];
-    if (v == null || v === '') continue;
-    if (typeof v === 'number') return 'quantitative';
-    if (typeof v === 'string') {
-      if (/^\d{4}-\d{2}-\d{2}/.test(v)) return 'temporal';
-      return 'nominal';
-    }
-  }
-  return 'nominal';
-}
-
-function renderChartSpecTab(chart, pathStr) {
-  let txt = '';
-  if (typeof chart.vegaSpec === 'string') txt = chart.vegaSpec;
-  else if (chart.vegaSpec) txt = JSON.stringify(chart.vegaSpec, null, 2);
-  return `
-    <div class="field">
-      <label class="field-label">${escapeHtml(t('editor.field.vega_spec'))} <span class="field-hint">${escapeHtml(t('editor.hint.vega_priority'))}</span></label>
-      <textarea class="chart-spec-input code-input"
-                data-spec-textarea="${escapeAttr(pathStr)}"
-                rows="14"
-                spellcheck="false">${escapeHtml(txt)}</textarea>
-    </div>
-  `;
-}
-
-function renderChartSvgTab(chart, pathStr) {
+function renderChartSvgMode(pathStr, chart) {
   const path = stringToPath(pathStr);
   const svgPath = [...path, 'svg'];
   const v = chart.svg || '';
   return `
-    <div class="field">
-      <label class="field-label">${escapeHtml(t('editor.field.svg_full'))} <span class="field-hint">${escapeHtml(t('editor.hint.viewbox'))}</span></label>
-      <textarea class="svg-input" rows="8" data-path="${pathToString(svgPath)}">${escapeHtml(v)}</textarea>
+    <div class="chart-editor">
+      <div class="chart-mode-banner">
+        <span class="banner-text">${escapeHtml(t('editor.chart.svg_banner'))}</span>
+        <button class="banner-btn"
+                data-action="exit-chart-mode"
+                data-chart-path="${escapeAttr(pathStr)}">${escapeHtml(t('editor.chart.back_to_builder'))}</button>
+      </div>
+      <div class="field">
+        <label class="field-label">${escapeHtml(t('editor.field.svg_full'))} <span class="field-hint">${escapeHtml(t('editor.hint.viewbox'))}</span></label>
+        <textarea class="svg-input" rows="10" data-path="${pathToString(svgPath)}">${escapeHtml(v)}</textarea>
+      </div>
     </div>
+  `;
+}
+
+function renderAdvancedDisclosure(pathStr, chart, currentMode) {
+  return `
+    <details class="chart-advanced">
+      <summary>${escapeHtml(t('editor.chart.advanced'))}</summary>
+      <div class="chart-advanced-body">
+        <button class="advanced-action"
+                data-action="enter-spec-mode"
+                data-chart-path="${escapeAttr(pathStr)}">
+          <span class="advanced-action-title">${escapeHtml(t('editor.chart.enter_spec'))}</span>
+          <span class="advanced-action-desc">${escapeHtml(t('editor.chart.enter_spec_desc'))}</span>
+        </button>
+        <button class="advanced-action"
+                data-action="enter-svg-mode"
+                data-chart-path="${escapeAttr(pathStr)}">
+          <span class="advanced-action-title">${escapeHtml(t('editor.chart.enter_svg'))}</span>
+          <span class="advanced-action-desc">${escapeHtml(t('editor.chart.enter_svg_desc'))}</span>
+        </button>
+      </div>
+    </details>
   `;
 }
 
@@ -744,6 +562,10 @@ function attachEditorHandlers() {
     inp.addEventListener('input', onChartCellInput);
   });
 
+  body.querySelectorAll('input[data-chart-label]').forEach(inp => {
+    inp.addEventListener('input', onChartLabelInput);
+  });
+
   body.querySelectorAll('textarea[data-spec-textarea]').forEach(ta => {
     ta.addEventListener('input', onSpecTextareaInput);
   });
@@ -754,11 +576,9 @@ function attachEditorHandlers() {
     card.addEventListener('drop', onLogoDrop);
   });
 
-  body.querySelectorAll('[data-enc-mark-type]').forEach(el => el.addEventListener('change', onMarkTypeChange));
-  body.querySelectorAll('[data-enc-mark-point]').forEach(el => el.addEventListener('change', onMarkPointChange));
-  body.querySelectorAll('[data-enc-field]').forEach(el => el.addEventListener('change', onEncFieldChange));
-  body.querySelectorAll('[data-enc-type]').forEach(el => el.addEventListener('change', onEncTypeChange));
-  body.querySelectorAll('[data-enc-title]').forEach(el => el.addEventListener('input', onEncTitleInput));
+  body.querySelectorAll('select[data-action="change-chart-type"]').forEach(sel => {
+    sel.addEventListener('change', onChartTypeChange);
+  });
 
   // Live-sync sidebar header label when typing the poster title
   body.querySelectorAll('input[data-path="header.title"]').forEach(input => {
@@ -791,91 +611,23 @@ function onChartCellInput(e) {
   const pathStr = inp.dataset.chartPath;
   const rowIdx = Number(inp.dataset.row);
   const colKey = inp.dataset.col;
+  const colType = inp.dataset.colType || 'string';
   const chart = chartFromPathStr(pathStr);
-  if (!chart) return;
-  ensureSpec(chart);
-  chart.vegaSpec.data = chart.vegaSpec.data || {};
-  chart.vegaSpec.data.values = chart.vegaSpec.data.values || [];
-  const row = chart.vegaSpec.data.values[rowIdx];
+  if (!chart || !Array.isArray(chart.rows)) return;
+  const row = chart.rows[rowIdx];
   if (!row) return;
-  row[colKey] = coerceCellValue(inp.value);
+  row[colKey] = coerceCellValue(inp.value, colType);
   refreshPreview();
 }
 
-function normalizeMark(spec) {
-  if (typeof spec.mark === 'string') spec.mark = { type: spec.mark };
-  if (!spec.mark) spec.mark = { type: 'point' };
-}
-
-function onMarkTypeChange(e) {
-  const pathStr = e.target.dataset.chartPath;
+function onChartLabelInput(e) {
+  const inp = e.target;
+  const pathStr = inp.dataset.chartPath;
+  const colKey = inp.dataset.colKey;
   const chart = chartFromPathStr(pathStr);
   if (!chart) return;
-  ensureSpec(chart);
-  normalizeMark(chart.vegaSpec);
-  chart.vegaSpec.mark.type = e.target.value;
-  rerenderEditorAndPreview(); // sub-options depend on mark type
-}
-
-function onMarkPointChange(e) {
-  const pathStr = e.target.dataset.chartPath;
-  const chart = chartFromPathStr(pathStr);
-  if (!chart) return;
-  ensureSpec(chart);
-  normalizeMark(chart.vegaSpec);
-  if (e.target.checked) chart.vegaSpec.mark.point = true;
-  else delete chart.vegaSpec.mark.point;
-  refreshPreview();
-}
-
-function onEncFieldChange(e) {
-  const pathStr = e.target.dataset.chartPath;
-  const channel = e.target.dataset.channel;
-  const chart = chartFromPathStr(pathStr);
-  if (!chart) return;
-  ensureSpec(chart);
-  chart.vegaSpec.encoding = chart.vegaSpec.encoding || {};
-  const newField = e.target.value;
-  if (!newField) {
-    delete chart.vegaSpec.encoding[channel];
-    rerenderEditorAndPreview();
-    return;
-  }
-  const enc = chart.vegaSpec.encoding[channel] || {};
-  enc.field = newField;
-  // Re-detect type whenever the field changes — type follows the data.
-  const values = chart.vegaSpec.data?.values || [];
-  enc.type = detectFieldType(values, newField);
-  chart.vegaSpec.encoding[channel] = enc;
-  rerenderEditorAndPreview();
-}
-
-function onEncTypeChange(e) {
-  const pathStr = e.target.dataset.chartPath;
-  const channel = e.target.dataset.channel;
-  const chart = chartFromPathStr(pathStr);
-  if (!chart) return;
-  ensureSpec(chart);
-  chart.vegaSpec.encoding = chart.vegaSpec.encoding || {};
-  const enc = chart.vegaSpec.encoding[channel] || {};
-  if (!e.target.value) delete enc.type;
-  else enc.type = e.target.value;
-  chart.vegaSpec.encoding[channel] = enc;
-  refreshPreview();
-}
-
-function onEncTitleInput(e) {
-  const pathStr = e.target.dataset.chartPath;
-  const channel = e.target.dataset.channel;
-  const chart = chartFromPathStr(pathStr);
-  if (!chart) return;
-  ensureSpec(chart);
-  chart.vegaSpec.encoding = chart.vegaSpec.encoding || {};
-  const enc = chart.vegaSpec.encoding[channel] || {};
-  const v = e.target.value;
-  if (v === '') delete enc.title;
-  else enc.title = v;
-  chart.vegaSpec.encoding[channel] = enc;
+  if (!chart.labels || typeof chart.labels !== 'object') chart.labels = {};
+  chart.labels[colKey] = inp.value;
   refreshPreview();
 }
 
@@ -885,70 +637,87 @@ function onSpecTextareaInput(e) {
   const chart = chartFromPathStr(pathStr);
   if (!chart) return;
   const text = ta.value;
+  chart.specOverride = text;
   if (!text.trim()) {
-    chart.vegaSpec = '';
     ta.classList.remove('invalid');
     refreshPreview();
     return;
   }
   try {
-    chart.vegaSpec = JSON.parse(text);
+    JSON.parse(text);
     ta.classList.remove('invalid');
     refreshPreview();
   } catch {
     ta.classList.add('invalid');
-    // Keep last valid spec in chart.vegaSpec; preview unchanged.
+    // Keep specOverride raw; runtime will catch parse errors and surface them.
   }
+}
+
+function onChartTypeChange(e) {
+  const sel = e.target;
+  const pathStr = sel.dataset.chartPath;
+  const newType = sel.value;
+  const chart = chartFromPathStr(pathStr);
+  if (!chart) return;
+  if (chart.type === newType) return;
+
+  const hadRows = Array.isArray(chart.rows) && chart.rows.length > 0;
+  if (hadRows && !confirm(t('editor.chart.type_switch_confirm'))) {
+    sel.value = chart.type;
+    return;
+  }
+  const preset = getPreset(newType);
+  if (!preset) return;
+  chart.type = newType;
+  chart.rows = preset.defaultRows.map(r => ({ ...r }));
+  // Column keys differ between presets; old label overrides no longer apply.
+  chart.labels = {};
+  rerenderEditorAndPreview();
 }
 
 function onEditorButton(e) {
   const btn = e.currentTarget;
   const action = btn.dataset.action;
 
-  if (action === 'set-chart-tab') {
-    setChartTab(btn.dataset.chartPath, btn.dataset.tab);
-    rerenderEditorOnly();
+  if (action === 'enter-spec-mode') {
+    const pathStr = btn.dataset.chartPath;
+    const chart = chartFromPathStr(pathStr);
+    if (!chart) return;
+    if (!chart.specOverride) {
+      // Seed the textarea with the spec the builder is currently producing,
+      // so the user can tweak from a working baseline.
+      const preset = getPreset(chart.type) || getPreset(DEFAULT_PRESET_ID);
+      const seed = preset ? preset.buildSpec(chart.rows || [], { navy: '#3c5a7a', navyDark: '#2e4661', navyLight: '#e4ecf4', accentRed: '#c0392b', accentSoft: '#f4d9d5' }) : {};
+      chart.specOverride = JSON.stringify(seed, null, 2);
+    }
+    chart.mode = 'spec';
+    rerenderEditorAndPreview();
     return;
   }
 
-  if (action === 'apply-preset') {
+  if (action === 'enter-svg-mode') {
     const pathStr = btn.dataset.chartPath;
-    const presetId = btn.dataset.presetId;
     const chart = chartFromPathStr(pathStr);
     if (!chart) return;
-    const cur = chart.vegaSpec;
-    const hasContent = (typeof cur === 'string' && cur.trim()) ||
-      (cur && typeof cur === 'object' && (
-        cur.mark || cur.layer ||
-        (cur.data && Array.isArray(cur.data.values) && cur.data.values.length)
-      ));
-    if (hasContent && !confirm(t('editor.chart.preset_overwrite_confirm'))) return;
-    const built = buildPreset(presetId);
-    if (built) {
-      chart.vegaSpec = built;
-      // After applying a preset jump straight to the Data tab so the user
-      // sees concrete values they'll likely want to edit first.
-      setChartTab(pathStr, 'data');
-      rerenderEditorAndPreview();
-    }
+    chart.mode = 'svg';
+    if (chart.svg == null) chart.svg = '';
+    rerenderEditorAndPreview();
     return;
   }
 
-  if (action === 'parse-csv') {
+  if (action === 'exit-chart-mode') {
     const pathStr = btn.dataset.chartPath;
-    const ta = document.querySelector(`textarea[data-csv-input="${CSS.escape(pathStr)}"]`);
-    if (!ta || !ta.value.trim()) return;
-    const { rows } = parseCSV(ta.value);
-    if (!rows.length) {
-      showToast(t('toast.csv_empty'), 'error');
-      return;
-    }
     const chart = chartFromPathStr(pathStr);
     if (!chart) return;
-    ensureSpec(chart);
-    chart.vegaSpec.data = chart.vegaSpec.data || {};
-    chart.vegaSpec.data.values = rows;
-    autoFillBareSpec(chart);
+    if (!confirm(t('editor.chart.exit_mode_confirm'))) return;
+    chart.mode = 'builder';
+    chart.specOverride = null;
+    chart.svg = null;
+    if (!chart.type) chart.type = DEFAULT_PRESET_ID;
+    if (!Array.isArray(chart.rows) || !chart.rows.length) {
+      const preset = getPreset(chart.type) || getPreset(DEFAULT_PRESET_ID);
+      chart.rows = preset ? preset.defaultRows.map(r => ({ ...r })) : [];
+    }
     rerenderEditorAndPreview();
     return;
   }
@@ -957,28 +726,12 @@ function onEditorButton(e) {
     const pathStr = btn.dataset.chartPath;
     const chart = chartFromPathStr(pathStr);
     if (!chart) return;
-    ensureSpec(chart);
-    chart.vegaSpec.data = chart.vegaSpec.data || {};
-    chart.vegaSpec.data.values = chart.vegaSpec.data.values || [];
-    const cols = chart.vegaSpec.data.values[0] ? Object.keys(chart.vegaSpec.data.values[0]) : [];
+    const preset = getPreset(chart.type) || getPreset(DEFAULT_PRESET_ID);
+    if (!preset) return;
+    chart.rows = Array.isArray(chart.rows) ? chart.rows : [];
     const empty = {};
-    cols.forEach(c => { empty[c] = null; });
-    chart.vegaSpec.data.values.push(empty);
-    rerenderEditorAndPreview();
-    return;
-  }
-
-  if (action === 'add-column') {
-    const pathStr = btn.dataset.chartPath;
-    const name = (prompt(t('prompt.column_name'), '') || '').trim();
-    if (!name) return;
-    const chart = chartFromPathStr(pathStr);
-    if (!chart) return;
-    ensureSpec(chart);
-    chart.vegaSpec.data = chart.vegaSpec.data || {};
-    chart.vegaSpec.data.values = chart.vegaSpec.data.values || [];
-    if (!chart.vegaSpec.data.values.length) chart.vegaSpec.data.values.push({});
-    chart.vegaSpec.data.values.forEach(r => { if (!(name in r)) r[name] = null; });
+    preset.columns.forEach(c => { empty[c.key] = null; });
+    chart.rows.push(empty);
     rerenderEditorAndPreview();
     return;
   }
@@ -987,19 +740,8 @@ function onEditorButton(e) {
     const pathStr = btn.dataset.chartPath;
     const rowIdx = Number(btn.dataset.row);
     const chart = chartFromPathStr(pathStr);
-    if (chart?.vegaSpec?.data?.values) {
-      chart.vegaSpec.data.values.splice(rowIdx, 1);
-    }
-    rerenderEditorAndPreview();
-    return;
-  }
-
-  if (action === 'delete-column') {
-    const pathStr = btn.dataset.chartPath;
-    const col = btn.dataset.col;
-    const chart = chartFromPathStr(pathStr);
-    if (chart?.vegaSpec?.data?.values) {
-      chart.vegaSpec.data.values.forEach(r => { delete r[col]; });
+    if (chart && Array.isArray(chart.rows)) {
+      chart.rows.splice(rowIdx, 1);
     }
     rerenderEditorAndPreview();
     return;
@@ -1046,11 +788,7 @@ function onEditorButton(e) {
 
   if (action === 'add-row-chart') {
     const i = Number(btn.dataset.sectionIndex);
-    state.config.sections[i].charts.push({
-      title: t('tpl.new_chart'),
-      svg: `<svg viewBox='0 0 400 260' xmlns='http://www.w3.org/2000/svg'><rect width='400' height='260' fill='#f2f6fb'/><text x='200' y='140' text-anchor='middle' font-size='14' fill='#3c5a7a' font-family='Helvetica'>${t('tpl.svg_paste_short')}</text></svg>`,
-      caption: ''
-    });
+    state.config.sections[i].charts.push(makeBuilderChart('line_by_group', t('tpl.new_chart'), ''));
     rerenderEditorAndPreview();
     return;
   }
@@ -1143,9 +881,3 @@ function rerenderEditorAndPreview() {
   refreshPreview(true);
 }
 
-/** Re-render editor only (no preview rebuild). Used for tab switches. */
-function rerenderEditorOnly() {
-  const scrollY = document.getElementById('editor-body').scrollTop;
-  renderEditor();
-  document.getElementById('editor-body').scrollTop = scrollY;
-}

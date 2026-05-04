@@ -15,6 +15,22 @@
  */
 
 import { t } from './i18n/index.js';
+import { getPreset } from './chart-presets/index.js';
+
+/** Fresh chart object in 'builder' mode with the preset's defaultRows seeded. */
+export function makeBuilderChart(presetId, title, caption) {
+  const preset = getPreset(presetId);
+  return {
+    title: title || '',
+    caption: caption || '',
+    mode: 'builder',
+    type: presetId,
+    rows: preset ? preset.defaultRows.map(r => ({ ...r })) : [],
+    labels: {},
+    specOverride: null,
+    svg: null,
+  };
+}
 
 export const SECTION_TYPES = [
   'intro_row',
@@ -50,11 +66,7 @@ export const SECTION_TEMPLATES = {
   }),
   chart_with_aside: () => ({
     type: 'chart_with_aside',
-    chart: {
-      title: t('tpl.figure_title'),
-      svg: `<svg viewBox='0 0 1200 540' xmlns='http://www.w3.org/2000/svg'><rect width='1200' height='540' fill='#f2f6fb'/><text x='600' y='280' text-anchor='middle' font-size='40' fill='#3c5a7a' font-family='Helvetica'>${t('tpl.svg_paste')}</text></svg>`,
-      caption: t('tpl.figure_caption')
-    },
+    chart: makeBuilderChart('annotated_timeline', t('tpl.figure_title'), t('tpl.figure_caption')),
     aside: {
       title: t('tpl.aside_title'),
       icon: '!',
@@ -68,8 +80,8 @@ export const SECTION_TEMPLATES = {
     type: 'charts_row',
     title: t('tpl.section_title'),
     charts: [
-      { title: t('tpl.figure_a'), svg: `<svg viewBox='0 0 400 260' xmlns='http://www.w3.org/2000/svg'><rect width='400' height='260' fill='#f2f6fb'/><text x='200' y='140' text-anchor='middle' font-size='16' fill='#3c5a7a' font-family='Helvetica'>${t('tpl.svg_placeholder')}</text></svg>`, caption: t('tpl.caption_a') },
-      { title: t('tpl.figure_b'), svg: `<svg viewBox='0 0 400 260' xmlns='http://www.w3.org/2000/svg'><rect width='400' height='260' fill='#f2f6fb'/><text x='200' y='140' text-anchor='middle' font-size='16' fill='#3c5a7a' font-family='Helvetica'>${t('tpl.svg_placeholder')}</text></svg>`, caption: t('tpl.caption_b') }
+      makeBuilderChart('line_by_group', t('tpl.figure_a'), t('tpl.caption_a')),
+      makeBuilderChart('bar_error',     t('tpl.figure_b'), t('tpl.caption_b')),
     ]
   }),
   findings_block: () => ({

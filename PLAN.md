@@ -5,13 +5,13 @@ Roadmap of features queued for the builder. Listed in suggested order — each s
 ## Status legend
 
 - ✅ done
-- 🔵 next up
+- 🔵 in progress / next up
 - 🟡 planned
 - ⚪ idea, not committed
 
 ---
 
-## ✅ Done (current state)
+## ✅ Done
 
 - Modular Vite project structure (migrated from single-file HTML)
 - 5 section types: `intro_row`, `case_grid`, `chart_with_aside`, `charts_row`, `findings_block`
@@ -21,118 +21,108 @@ Roadmap of features queued for the builder. Listed in suggested order — each s
 - localStorage projects: auto-save, project switcher, rename, delete
 - Bundle export/import (all projects → one JSON for backup/migration)
 - IBM Plex typography, dark IDE-style builder UI
+- Russian localization of the builder UI (EN / RU toggle, persisted)
+- 5 colour themes + custom palette editor
+- Vega-Lite chart builder (Data / Encoding / Spec / SVG tabs, with chart presets)
+- Drag-and-drop section reordering
+- Section duplication
+- Undo / redo (`Cmd/Ctrl+Z`, `Cmd/Ctrl+Shift+Z`)
+- Logo drag-and-drop with embedded base64 storage
+- QR-code generation for the contact block
 
 ---
 
-## 🔵 Step 1 — Russian localization
+## 🔵 In progress — Chart editor refactor (single primary path)
 
-**Why first:** simplest of the queued items, useful immediately, exercises the i18n boilerplate that themes will reuse.
+**Why:** the current chart editor exposes five parallel input mechanisms (`Insert preset` dropdown + `Data` / `Encoding` / `Spec` / `SVG` tabs). They overlap, none is clearly primary, and there's no source-of-truth rule when more than one is filled in. Real users (Maximiliano on the Aconcagua altitude profile) get stuck — they fill in one section, the chart doesn't render, no clear feedback as to why.
 
 ### Approach
 
-1. Create `src/i18n/index.js` exporting:
-   - `setLocale(code)` — switches active locale, re-renders UI
-   - `t(key, params?)` — returns translated string
-   - `getLocale()` / `availableLocales`
-2. Create `src/i18n/en.js` and `src/i18n/ru.js` — flat objects of `{ key: string }`. Group keys by area: `toolbar.*`, `sidebar.*`, `editor.field.*`, `editor.section.*`, `project.*`, `toast.*`, etc.
-3. Replace every UI string in `src/` with `t(...)`. **Do not** translate poster content (the user's data) — only chrome.
-4. Add a locale toggle in the toolbar (RU / EN). Persist choice to `localStorage` under `a0_poster_locale_v1`. Default: detect from `navigator.language`, fall back to EN.
+Collapse to one primary path with one escape hatch.
 
-### Out of scope for this step
+**Primary path (visible by default):**
+1. **Chart type selector** at the top (replaces "Insert preset"). Mandatory choice.
+2. **Data table** below, columns determined by the chosen chart type. Standard `data-path` pattern, "Add row" button, delete-row per row.
+3. **Live preview** — runtime takes `chart.type` + `chart.rows`, looks up preset, builds Vega-Lite spec, renders.
 
-- Don't translate `poster-runtime/`. Poster CONTENT is user data and stays in whatever language the user types.
-- Don't translate field hints that reference HTML/CSS terms (e.g. "viewBox controls scaling") — keep technical labels English even in RU mode for clarity.
+The Encoding tab is removed entirely — encoding is determined by chart type.
+
+**Advanced (collapsed):** single `▸ Advanced` disclosure with two escape hatches: edit Vega-Lite spec directly, or paste raw SVG. Only one is active at a time, controlled by `chart.mode`.
+
+### Schema
+
+```js
+chart: {
+  title, caption,
+  mode: 'builder' | 'spec' | 'svg',
+  type: 'altitude_profile',  // when mode === 'builder'
+  rows: [...],               // when mode === 'builder'
+  specOverride: null | str,  // when mode === 'spec'
+  svg: null | str,           // when mode === 'svg'
+}
+```
+
+### Initial preset list
+
+`altitude_profile`, `line_by_group`, `bar_error`, `boxplot`, `scatter_regression`, `forest_plot`. Six is enough for the medical conferences this is used for.
 
 ### Acceptance criteria
 
-- Toggling locale switches all UI chrome instantly without page reload
-- Choice persists across reloads
-- Toast messages and `confirm()`/`prompt()` dialogs translated
-- No layout breakage (Russian strings can be ~30% longer — verify forms don't overflow)
-
----
-
-## 🔵 Step 2 — Color themes
-
-**Why second:** clean win, visible upgrade, validates the architecture before the bigger Vega-Lite work.
-
-### Approach
-
-1. The poster CSS already uses CSS variables (`--navy`, `--navy-dark`, `--accent-red`, etc.) — themes just override these.
-2. Create `src/themes/index.js` with a registry of named themes:
-   ```js
-   export const THEMES = {
-     navy_red:    { name: 'Navy & Red (default)',    vars: { ... } },
-     teal_orange: { name: 'Teal & Orange',           vars: { ... } },
-     monochrome:  { name: 'Monochrome (journals)',    vars: { ... } },
-     warm_rust:   { name: 'Warm Rust (medical)',     vars: { ... } },
-     // …
-   };
-   ```
-3. Add `theme` field to the config schema. Default to `navy_red`. Selection happens in the **header editor** (it's a poster-level setting, not a section setting).
-4. In `buildPosterHTML`, inject theme variables into `:root` of the exported HTML. The runtime CSS already references the variables; no changes to `poster.css` needed.
-5. Optional: a "Custom" preset with color pickers for each variable. Save the custom palette in the config so it travels with the project.
-
-### Acceptance criteria
-
-- Theme dropdown in header editor
-- Switching theme updates preview within debounce window
-- Theme persists in saved projects and exported HTML
-- All 4–5 presets feel intentional, not just hue rotations
-
----
-
-## 🟡 Step 3 — Chart builder via Vega-Lite
-
-**The big one.** Replace raw SVG-paste with a structured chart editor.
-
-### Why Vega-Lite
-
-- JSON grammar fits our "everything is JSON" model perfectly
-- Covers all common scientific chart types: line, bar, scatter, boxplot, error bars, layered annotations
-- Renders to SVG natively — same output format we already use
-- One CDN script (~400 KB gzipped); reasonable for the scope
-- Existing Vega-Lite editor (vega.github.io/editor) provides a known reference UX
-
-### Approach
-
-**Phase 3a — preview integration.** Inside the runtime, when a chart object has `vegaSpec` instead of `svg`, load Vega-Lite (lazy, from CDN) and render to SVG into the chart slot. Falls back to `svg` field if Vega is unavailable (offline).
-
-**Phase 3b — builder UX.** In the chart editors (`chart_with_aside.chart` and `charts_row.charts[i]`), add a tabbed interface:
-- **Data** — table editor (paste CSV / type rows / column types)
-- **Encoding** — visual mapping (X = column A, Y = column B, color = column C, mark = line/bar/point/...)
-- **Spec** — raw Vega-Lite JSON for power users
-- **SVG** — fallback raw SVG (still supported)
-
-**Phase 3c — chart presets.** Common scientific chart types as starters: VISA-P trajectory (line by group), boxplot of outcome by group, forest plot (effect sizes with CIs), bar chart with error bars, scatter with regression line.
-
-### Risks
-
-- Bundle size jumps. Mitigate by lazy-loading Vega-Lite only if a chart with `vegaSpec` exists.
-- Print quality: verify SVG fonts render correctly when Chrome prints A0 PDF. Embed font-family explicitly in spec (don't rely on browser defaults).
-- Backward compat: old projects with raw SVG keep working. Don't auto-migrate.
+- Fresh chart shows: title → chart type dropdown → empty data table → collapsed Advanced. No tabs.
+- Switching chart type with non-empty rows triggers `confirm()`.
+- Existing projects (Aconcagua demo, anything in `localStorage`) load and render unchanged via migration.
+- Pasting raw SVG into Advanced still works.
+- `npm run build` clean.
 
 ### Out of scope
 
-- Real-time data connections (CSV upload + paste is enough)
-- Vega (full grammar) — Vega-Lite only
+- No CSV upload — typing rows is enough (≤30 rows typical for scientific posters).
+- No visual encoding editor — encoding is per-preset.
+- No new chart types beyond the six listed.
 
 ---
 
-## 🟡 Step 4 — Quality-of-life polish
+## 🟡 Next — Image drop & autoscale for charts
 
-Once 1–3 are in, these become the obvious next gaps:
+**Why:** even after the refactor, "paste raw SVG" still requires opening the file in a text editor and copying its contents. The same drop-zone pattern that already works for logos solves this in one motion, and naturally extends to PNG / JPG / WebP — useful for screenshots from PowerPoint or graphs exported as bitmap.
 
-- **QR generator from URL** — replace the "paste raw SVG" field with a URL input + auto-generated QR (qrcode-svg or similar, ~10 KB)
-- **Logo uploader** — drag-and-drop image → auto base64 data URI (current `src` field is fine for power users, but UX is rough)
-- **Overflow indicator** — when poster content overflows the A0 frame, show a red bar at the bottom of the preview with byte/pixel info
-- **Drag-and-drop section reordering** — replace `▲▼` buttons with native HTML5 drag (sortable.js or hand-rolled)
-- **Section duplication** — `⎘ Duplicate` next to `✕ Delete`
-- **Undo/redo** — keep a history stack of last N config snapshots; Cmd+Z / Cmd+Shift+Z
+### Approach
+
+Rename `mode: 'svg'` to `mode: 'image'`. The chart editor's Advanced section gains a drop zone accepting `.svg`, `.png`, `.jpg`, `.webp`. On drop:
+
+- SVG → stored inline, rendered as before
+- Raster → auto-downscale via canvas (max 2400px on long side), convert to WebP, store as data URI, render via `<img>`
+
+Schema: `chart.image = { type: 'svg' | 'image', dataUri: string }`. Single field, runtime branches on `type`.
+
+### Print-quality safeguard
+
+After downscale, if final raster width is < ~1800px, show a banner: *"This image may look pixelated at A0 print size. SVG or images > 2400px wide are recommended."* Don't block — sometimes pixelation is acceptable (drafts, "this is roughly what we want here" placeholders).
+
+### Reuse
+
+The logo drag-and-drop module already handles file → base64 conversion and the canvas-downscale path. Refactor it to a shared `src/file-drop.js` so both call sites use the same code.
+
+### Out of scope
+
+- No `IndexedDB` storage layer for large images — raster compression to WebP keeps configs small enough for `localStorage` in practice. If real users hit the 5 MB quota, that's the trigger to revisit.
+- No image editing inside the builder (crop, rotate). If the user needs that, they edit in their own tool first.
+
+### Don't start until
+
+The chart editor refactor (single primary path) is shipped and tested. Both touch `chart.mode`; no point editing the same surface twice.
 
 ---
 
-## ⚪ Step 5 — Deploy to Mark's Astro site
+## 🟡 Quality-of-life polish (remaining)
+
+The original Step 4 list — most items already shipped, one left:
+
+- **Overflow indicator** — when poster content overflows the A0 frame, show a red bar at the bottom of the preview with byte/pixel info. Helps catch posters that look fine in preview but truncate on actual print.
+
+---
+
+## ⚪ Step — Deploy to Mark's Astro site
 
 **Goal:** make the builder available at `tvojdomen.com/poster-builder` so colleagues can use it without downloading anything.
 
@@ -162,6 +152,7 @@ Recommend A unless integration with the rest of the site is wanted (shared heade
 - **Template marketplace** — share/download community-made section types as JSON manifests
 - **Print preview math** — compute character counts per section vs known overflow thresholds
 - **Aconcagua content port** — paste the original Aconcagua case-report content into a project as a real-world stress test of the section types
+- **Chart editor: more presets** — heatmap, dose-response curve, Kaplan-Meier survival curve. Add when a real conference poster needs them, not before.
 
 ---
 

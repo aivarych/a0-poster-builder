@@ -24,6 +24,7 @@ import { renderSidebar } from './sidebar.js';
 import { renderEditor } from './editor.js';
 import { refreshPreview } from './preview.js';
 import { resetHistory } from './history.js';
+import { migrateConfig } from './chart-migration.js';
 import { t } from './i18n/index.js';
 
 const LS_PROJECTS = 'a0_poster_projects_v1';
@@ -43,7 +44,12 @@ function safeLS(fn, fallback) {
 export function loadProjectsFromStorage() {
   const raw = safeLS(() => localStorage.getItem(LS_PROJECTS), null);
   if (!raw) return {};
-  try { return JSON.parse(raw) || {}; } catch { return {}; }
+  let parsed;
+  try { parsed = JSON.parse(raw) || {}; } catch { return {}; }
+  for (const id of Object.keys(parsed)) {
+    if (parsed[id] && parsed[id].config) migrateConfig(parsed[id].config);
+  }
+  return parsed;
 }
 
 export function saveProjectsToStorage(projects) {
@@ -192,7 +198,7 @@ export function newProject() {
     userNamed: false
   };
   state.currentProjectId = id;
-  state.config = structuredClone(DEFAULT_CONFIG);
+  state.config = migrateConfig(structuredClone(DEFAULT_CONFIG));
   state.selected = { kind: 'header', index: -1 };
   resetHistory();
   saveProjectsToStorage(state.projects);
@@ -214,7 +220,7 @@ export function switchProject(id) {
     saveProjectsToStorage(state.projects);
   }
   state.currentProjectId = id;
-  state.config = structuredClone(state.projects[id].config);
+  state.config = migrateConfig(structuredClone(state.projects[id].config));
   state.selected = { kind: 'header', index: -1 };
   resetHistory();
   saveCurrentIdToStorage(id);
@@ -248,7 +254,7 @@ export function deleteProject(id) {
   if (state.currentProjectId === id) {
     state.currentProjectId = null;
     ensureCurrentProject();
-    state.config = structuredClone(state.projects[state.currentProjectId].config);
+    state.config = migrateConfig(structuredClone(state.projects[state.currentProjectId].config));
     state.selected = { kind: 'header', index: -1 };
     resetHistory();
     saveCurrentIdToStorage(state.currentProjectId);
@@ -302,7 +308,7 @@ export function importBundle() {
             id: newId,
             name: p.name || t('project.imported_fallback'),
             updatedAt: p.updatedAt || Date.now(),
-            config: p.config,
+            config: migrateConfig(p.config),
             userNamed: !!p.userNamed
           };
           added++;

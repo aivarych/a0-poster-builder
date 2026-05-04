@@ -29,7 +29,4 @@ export const state = {
 
   /** Id of the project currently being edited */
   currentProjectId: null,
-
-  /** Active tab per chart, keyed by dotted path (e.g. "sections.2.chart"). UI-only, not persisted. */
-  chartTabs: {}
 };

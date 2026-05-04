@@ -61,8 +61,23 @@ export const DEFAULT_CONFIG = {
       type: "chart_with_aside",
       chart: {
         title: "Figure 1. MMII vs Hs across 36 lunar months",
-        svg: `<svg viewBox='0 0 1200 540' xmlns='http://www.w3.org/2000/svg'><g font-family='Helvetica,Arial,sans-serif'><line x1='90' y1='80' x2='1170' y2='80' stroke='#e0e5ec'/><line x1='90' y1='180' x2='1170' y2='180' stroke='#e0e5ec'/><line x1='90' y1='280' x2='1170' y2='280' stroke='#e0e5ec'/><line x1='90' y1='380' x2='1170' y2='380' stroke='#e0e5ec'/><line x1='90' y1='440' x2='1170' y2='440' stroke='#475569' stroke-width='2'/><g font-size='20' fill='#666'><text x='80' y='86' text-anchor='end'>3.0</text><text x='80' y='186' text-anchor='end'>2.5</text><text x='80' y='286' text-anchor='end'>2.0</text><text x='80' y='386' text-anchor='end'>1.5</text><text x='80' y='446' text-anchor='end'>1.0</text><text x='18' y='250' transform='rotate(-90 18 250)' text-anchor='middle' font-weight='600'>Hs (m) / MMII (norm.)</text></g><polyline points='180,400 270,360 360,310 450,260 540,220 630,260 720,310 810,360 900,320 990,260 1080,210' fill='none' stroke='#3c5a7a' stroke-width='5' stroke-linecap='round'/><polyline points='180,410 270,370 360,320 450,280 540,240 630,280 720,320 810,370 900,340 990,280 1080,230' fill='none' stroke='#c0392b' stroke-width='5' stroke-linecap='round' stroke-dasharray='10,6'/><g font-size='18' font-weight='700'><circle cx='1080' cy='210' r='10' fill='#3c5a7a' stroke='white' stroke-width='3'/><circle cx='1080' cy='230' r='10' fill='#c0392b' stroke='white' stroke-width='3'/><text x='1100' y='215' fill='#3c5a7a'>MMII</text><text x='1100' y='235' fill='#c0392b'>Hs</text></g><g font-size='18' fill='#475569'><text x='180' y='475' text-anchor='middle'>New</text><text x='450' y='475' text-anchor='middle'>1Q</text><text x='720' y='475' text-anchor='middle'>Full</text><text x='990' y='475' text-anchor='middle'>3Q</text></g></g></svg>`,
-        caption: "Curves track each other across the lunar month; cross-correlation peaks at lag = 0 (r ≈ 0.81)."
+        caption: "Curves track each other across the lunar month; cross-correlation peaks at lag = 0 (r ≈ 0.81).",
+        mode: "builder",
+        type: "line_by_group",
+        rows: [
+          { x:  0, y: 1.6, group: 'MMII' },
+          { x:  7, y: 2.0, group: 'MMII' },
+          { x: 14, y: 2.4, group: 'MMII' },
+          { x: 21, y: 2.0, group: 'MMII' },
+          { x: 28, y: 1.6, group: 'MMII' },
+          { x:  0, y: 1.5, group: 'Hs'   },
+          { x:  7, y: 1.9, group: 'Hs'   },
+          { x: 14, y: 2.3, group: 'Hs'   },
+          { x: 21, y: 1.9, group: 'Hs'   },
+          { x: 28, y: 1.5, group: 'Hs'   },
+        ],
+        specOverride: null,
+        svg: null,
       },
       aside: {
         title: "Field Notes",
@@ -81,18 +96,45 @@ export const DEFAULT_CONFIG = {
       charts: [
         {
           title: "Figure 2a. Cross-correlation MMII × Hs",
-          svg: `<svg viewBox='0 0 400 260' xmlns='http://www.w3.org/2000/svg'><g font-family='Helvetica,Arial,sans-serif' font-size='10' fill='#475569'><line x1='50' y1='20' x2='50' y2='215' stroke='#94a3b8'/><line x1='50' y1='215' x2='380' y2='215' stroke='#94a3b8'/><line x1='50' y1='130' x2='380' y2='130' stroke='#cbd5e1' stroke-dasharray='3,3'/><polyline points='80,170 120,140 160,100 200,60 240,100 280,140 320,170 360,190' fill='none' stroke='#3c5a7a' stroke-width='3'/><g fill='#3c5a7a'><circle cx='80' cy='170' r='4'/><circle cx='120' cy='140' r='4'/><circle cx='160' cy='100' r='4'/><circle cx='200' cy='60' r='5' stroke='#c0392b' stroke-width='2' fill='#fff'/><circle cx='240' cy='100' r='4'/><circle cx='280' cy='140' r='4'/><circle cx='320' cy='170' r='4'/><circle cx='360' cy='190' r='4'/></g><text x='200' y='52' font-size='11' font-weight='700' fill='#c0392b' text-anchor='middle'>r=0.81</text><text x='80' y='233' text-anchor='middle'>−4</text><text x='200' y='233' text-anchor='middle'>0</text><text x='320' y='233' text-anchor='middle'>+4</text><text x='200' y='250' text-anchor='middle' font-weight='600'>Lag (days)</text></g></svg>`,
-          caption: "Peak correlation at zero lag — no leading or lagging signal."
+          caption: "Peak correlation at zero lag — no leading or lagging signal.",
+          mode: "builder",
+          type: "scatter_regression",
+          rows: [
+            { x: -4, y: 0.20 }, { x: -3, y: 0.32 }, { x: -2, y: 0.51 },
+            { x: -1, y: 0.68 }, { x:  0, y: 0.81 }, { x:  1, y: 0.66 },
+            { x:  2, y: 0.49 }, { x:  3, y: 0.30 }, { x:  4, y: 0.18 },
+          ],
+          specOverride: null,
+          svg: null,
         },
         {
           title: "Figure 2b. Hs by lunar phase",
-          svg: `<svg viewBox='0 0 400 260' xmlns='http://www.w3.org/2000/svg'><g font-family='Helvetica,Arial,sans-serif' font-size='10' fill='#475569'><line x1='50' y1='20' x2='50' y2='215' stroke='#94a3b8'/><line x1='50' y1='215' x2='380' y2='215' stroke='#94a3b8'/><rect x='80' y='130' width='50' height='85' fill='#94b0ce'/><rect x='150' y='95' width='50' height='120' fill='#3c5a7a'/><rect x='220' y='75' width='50' height='140' fill='#c0392b'/><rect x='290' y='110' width='50' height='105' fill='#94b0ce'/><text x='105' y='123' font-size='11' font-weight='700' fill='#1e293b' text-anchor='middle'>1.6</text><text x='175' y='88' font-size='11' font-weight='700' fill='#1e293b' text-anchor='middle'>2.0</text><text x='245' y='68' font-size='11' font-weight='700' fill='#1e293b' text-anchor='middle'>2.3</text><text x='315' y='103' font-size='11' font-weight='700' fill='#1e293b' text-anchor='middle'>1.8</text><text x='105' y='233' text-anchor='middle'>New</text><text x='175' y='233' text-anchor='middle'>1Q</text><text x='245' y='233' text-anchor='middle'>Full</text><text x='315' y='233' text-anchor='middle'>3Q</text></g></svg>`,
-          caption: "Mean Hs peaks at full moon, mirroring the MMII peak."
+          caption: "Mean Hs peaks at full moon, mirroring the MMII peak.",
+          mode: "builder",
+          type: "bar_error",
+          rows: [
+            { category: 'New',  mean: 1.6, sd: 0.3 },
+            { category: '1Q',   mean: 2.0, sd: 0.4 },
+            { category: 'Full', mean: 2.3, sd: 0.3 },
+            { category: '3Q',   mean: 1.8, sd: 0.4 },
+          ],
+          specOverride: null,
+          svg: null,
         },
         {
-          title: "Figure 3. MMII by forest plot",
-          svg: `<svg viewBox='0 0 400 260' xmlns='http://www.w3.org/2000/svg'><g font-family='Helvetica,Arial,sans-serif' font-size='10' fill='#475569'><line x1='60' y1='20' x2='60' y2='195' stroke='#94a3b8'/><line x1='60' y1='195' x2='390' y2='195' stroke='#94a3b8'/><rect x='80'  y='100' width='38' height='95'  fill='#3c5a7a'/><rect x='130' y='80'  width='38' height='115' fill='#3c5a7a'/><rect x='180' y='70'  width='38' height='125' fill='#c0392b'/><rect x='230' y='90'  width='38' height='105' fill='#3c5a7a'/><rect x='280' y='110' width='38' height='85'  fill='#3c5a7a'/><rect x='330' y='95'  width='38' height='100' fill='#3c5a7a'/><g font-size='10' fill='#1e293b' font-weight='700'><text x='99'  y='95'  text-anchor='middle'>0.6</text><text x='149' y='75'  text-anchor='middle'>0.7</text><text x='199' y='65'  text-anchor='middle'>0.8</text><text x='249' y='85'  text-anchor='middle'>0.7</text><text x='299' y='105' text-anchor='middle'>0.5</text><text x='349' y='90'  text-anchor='middle'>0.6</text></g><g><text x='99'  y='210' text-anchor='middle'>P1</text><text x='149' y='210' text-anchor='middle'>P2</text><text x='199' y='210' text-anchor='middle'>P3</text><text x='249' y='210' text-anchor='middle'>P4</text><text x='299' y='210' text-anchor='middle'>P5</text><text x='349' y='210' text-anchor='middle'>P6</text></g></g></svg>`,
-          caption: "Plot 3, closest to a hilltop with sea-breeze exposure, drives the correlation."
+          title: "Figure 3. Pooled effect across plots",
+          caption: "Plot 3, closest to a hilltop with sea-breeze exposure, drives the correlation.",
+          mode: "builder",
+          type: "forest_plot",
+          rows: [
+            { study: 'Plot 1', effect: 0.55, ci_low: 0.30, ci_high: 0.78 },
+            { study: 'Plot 2', effect: 0.62, ci_low: 0.40, ci_high: 0.83 },
+            { study: 'Plot 3', effect: 0.78, ci_low: 0.58, ci_high: 0.92 },
+            { study: 'Plot 4', effect: 0.49, ci_low: 0.25, ci_high: 0.72 },
+            { study: 'Pooled', effect: 0.61, ci_low: 0.48, ci_high: 0.74 },
+          ],
+          specOverride: null,
+          svg: null,
         }
       ]
     },

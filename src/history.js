@@ -9,7 +9,7 @@
  * `past` to avoid recording sequences of identical states (refreshPreview
  * fires on every keystroke and many of those don't actually change config).
  *
- * Other state — selection, chartTabs, projects — is intentionally NOT in
+ * Other state — selection, projects — is intentionally NOT in
  * the snapshot: it's UI/session state, not document state.
  */
 

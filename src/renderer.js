@@ -10,9 +10,16 @@
  * `?raw` import suffix at build/dev time.
  *
  * Vega-Lite vendor (vega-core + vega-lite) is inlined into the EXPORTED
- * HTML when the config uses chart.vegaSpec (so exports work offline). On
- * the BUILDER side the same sources are loaded lazily as a separate chunk
- * — the builder bundle stays small for posters without Vega-Lite charts.
+ * HTML when at least one chart is in builder/spec mode (so exports work
+ * offline). On the BUILDER side the same sources are loaded lazily as a
+ * separate chunk — the builder bundle stays small for posters with only
+ * SVG-mode charts.
+ *
+ * Chart preset buildSpec() functions are serialised to JS via
+ * Function.toString() and injected into a `window.__PRESETS__` block. The
+ * runtime looks them up by chart.type. This keeps preset definitions in one
+ * place (src/chart-presets/) while still letting the exported HTML render
+ * builder-mode charts standalone.
  *
  * We deliberately skip vega-embed and call vega.View.toSVG() ourselves —
  * vega-embed wraps the chart in its own DOM and injects global CSS that
@@ -27,12 +34,17 @@ import posterCss from '../poster-runtime/poster.css?raw';
 import posterRuntime from '../poster-runtime/runtime.js?raw';
 import { escapeHtml } from './utils.js';
 import { buildThemeCSS } from './themes/index.js';
+import { PRESETS, defaultLabelsFor } from './chart-presets/index.js';
 
-function hasVegaSpec(config) {
+function needsVega(config) {
   for (const sec of config?.sections || []) {
-    if (sec?.chart?.vegaSpec) return true;
-    if (Array.isArray(sec?.charts)) {
-      for (const c of sec.charts) if (c?.vegaSpec) return true;
+    const charts = [];
+    if (sec?.chart) charts.push(sec.chart);
+    if (Array.isArray(sec?.charts)) charts.push(...sec.charts);
+    for (const c of charts) {
+      if (!c) continue;
+      const mode = c.mode || (c.svg ? 'svg' : 'builder');
+      if (mode !== 'svg') return true;
     }
   }
   return false;
@@ -49,6 +61,24 @@ function loadVegaVendor() {
   return vendorPromise;
 }
 
+/**
+ * Inline preset buildSpec functions + their default column labels into the
+ * exported HTML. The runtime looks up `window.__PRESETS__[chart.type]` to
+ * get { defaults, build } and calls build(rows, theme, labels) where labels
+ * = { ...defaults, ...chart.labels }.
+ *
+ * Function.toString() returns the source; ESM bundlers preserve it. We use
+ * `function (...) { ... }` form (NOT method shorthand) in each preset so
+ * the source is a valid object-literal value.
+ */
+function buildPresetsScript() {
+  const entries = PRESETS.map(p => {
+    const defaults = JSON.stringify(defaultLabelsFor(p));
+    return `${JSON.stringify(p.id)}: { defaults: ${defaults}, build: ${p.buildSpec.toString()} }`;
+  });
+  return `<script>window.__PRESETS__={${entries.join(',\n')}};<\/script>`;
+}
+
 export async function buildPosterHTML(config) {
   const title = escapeHtml(config?.header?.title || 'A0 Poster');
   // JSON inside <script> tags must escape any literal </script sequences
@@ -56,9 +86,11 @@ export async function buildPosterHTML(config) {
   const themeCss = buildThemeCSS(config);
 
   let vegaBlock = '';
-  if (hasVegaSpec(config)) {
+  let presetsBlock = '';
+  if (needsVega(config)) {
     const v = await loadVegaVendor();
     vegaBlock = `<script>${v.vega}<\/script>\n<script>${v.vegaLite}<\/script>`;
+    presetsBlock = buildPresetsScript();
   }
 
   return `<!DOCTYPE html>
@@ -77,6 +109,7 @@ ${themeCss}
 ${safeJson}
 <\/script>
 ${vegaBlock}
+${presetsBlock}
 <script>
 ${posterRuntime}
 <\/script>

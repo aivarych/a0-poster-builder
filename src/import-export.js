@@ -12,6 +12,7 @@ import { renderSidebar } from './sidebar.js';
 import { renderEditor } from './editor.js';
 import { refreshPreview } from './preview.js';
 import { resetHistory } from './history.js';
+import { migrateConfig } from './chart-migration.js';
 import { t } from './i18n/index.js';
 
 export async function exportPrintReadyHTML() {
@@ -42,7 +43,7 @@ export function onImportFile(e) {
       if (!cfg.header || !cfg.sections || !cfg.footer) {
         throw new Error(t('toast.json_invalid_keys'));
       }
-      state.config = cfg;
+      state.config = migrateConfig(cfg);
       state.selected = { kind: 'header', index: -1 };
       resetHistory();
       renderSidebar();
@@ -59,7 +60,7 @@ export function onImportFile(e) {
 
 export function resetConfig() {
   if (!confirm(t('confirm.reset'))) return;
-  state.config = structuredClone(DEFAULT_CONFIG);
+  state.config = migrateConfig(structuredClone(DEFAULT_CONFIG));
   state.selected = { kind: 'header', index: -1 };
   resetHistory();
   renderSidebar();
