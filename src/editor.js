@@ -146,14 +146,16 @@ function renderChartBuilderMode(pathStr, chart) {
 
   const headers = preset.columns.map(c => `
     <th>
-      <input type="text"
-             class="col-label-input"
-             data-chart-label="1"
-             data-chart-path="${escapeAttr(pathStr)}"
-             data-col-key="${escapeAttr(c.key)}"
-             value="${escapeAttr(labels[c.key] || '')}"
-             title="${escapeAttr(t('editor.chart.label_tooltip'))}">
-      <span class="col-type">${escapeHtml(c.type === 'number' ? '#' : 'a')}</span>
+      <div class="col-header-inner">
+        <input type="text"
+               class="col-label-input"
+               data-chart-label="1"
+               data-chart-path="${escapeAttr(pathStr)}"
+               data-col-key="${escapeAttr(c.key)}"
+               value="${escapeAttr(labels[c.key] || '')}"
+               title="${escapeAttr(t('editor.chart.label_tooltip'))}">
+        <span class="col-type">${escapeHtml(c.type === 'number' ? '#' : 'a')}</span>
+      </div>
     </th>
   `).join('');
 
