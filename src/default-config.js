@@ -18,8 +18,8 @@ export const DEFAULT_CONFIG = {
       { name: "Q. R. Sundial, MSc", role: "Statistical hand-waving", affiliation: "1" }
     ],
     affiliations: [
-      "1 Institute for Implausible Correlations, Ushuaia, Argentina",
-      "2 Department of Speculative Mammalogy, University of Nowhere"
+      "Institute for Implausible Correlations, Ushuaia, Argentina",
+      "Department of Speculative Mammalogy, University of Nowhere"
     ],
     subtitle: "Three austral summers of paired tail-flicking surveys and offshore buoy data.",
     logos: [

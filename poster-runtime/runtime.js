@@ -117,7 +117,11 @@ function renderHeader(h) {
       const aff = el('div', 'author-block');
       aff.style.flex = '1';
       aff.style.minWidth = '80mm';
-      aff.innerHTML = '<span class="xs" style="color: rgba(255,255,255,0.85); font-size: 15pt;">'+h.affiliations.join(' &nbsp; ')+'</span>';
+      const items = h.affiliations.map((s, i) => {
+        const cleaned = String(s).replace(/^\s*\d+\s*[.\)]?\s+/, '');
+        return '<sup>'+(i+1)+'</sup>'+cleaned;
+      });
+      aff.innerHTML = '<span class="affiliations-list">'+items.join('<span class="affiliation-sep">·</span>')+'</span>';
       authors.appendChild(aff);
     }
     content.appendChild(authors);

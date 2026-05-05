@@ -55,6 +55,9 @@ strong { font-weight: 700; } em { font-style: italic; }
 .authors .author-block { display: flex; flex-direction: column; }
 .authors .author-name { font-weight: 700; font-size: 22pt; }
 .authors .author-role { font-size: 16pt; opacity: 0.88; margin-top: 1mm; }
+.authors .affiliations-list { color: rgba(255,255,255,0.85); font-size: 15pt; line-height: 1.5; }
+.authors .affiliations-list sup { font-weight: 700; margin-right: 0.4mm; }
+.authors .affiliation-sep { display: inline-block; margin: 0 3mm; opacity: 0.55; }
 .expedition-note {
   font-size: 16pt; font-style: italic; opacity: 0.9; margin-top: 5mm;
   padding-top: 4mm; border-top: 0.3mm solid rgba(255,255,255,0.25);
